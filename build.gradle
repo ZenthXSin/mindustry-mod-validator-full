@@ -1,0 +1,103 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.github.modvalidator'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+// Mindustry v159.5 (v159.6 JitPack build failed, keep v159.5 until fixed)
+def mindustryVersion = 'v159.5'
+// Arc commit hash updated to v159.6's archash (d72b19223f, compatible with v159.5)
+def arcVersion = 'd72b19223f'
+// Rhino version used by this Mindustry build
+def rhinoVersion = 'e74ac129d2bff72c1deb536d7d99a0dbb7046d2e'
+
+dependencies {
+    // Mindustry core (contains all game content logic)
+    implementation "com.github.Anuken.Mindustry:core:${mindustryVersion}"
+    // Mindustry server (contains ServerLauncher and headless support)
+    implementation "com.github.Anuken.Mindustry:server:${mindustryVersion}"
+
+    // Arc framework modules
+    implementation "com.github.Anuken.Arc:arc-core:${arcVersion}"
+    implementation "com.github.Anuken.Arc:flabel:${arcVersion}"
+    implementation "com.github.Anuken.Arc:freetype:${arcVersion}"
+    implementation "com.github.Anuken.Arc:g3d:${arcVersion}"
+    implementation "com.github.Anuken.Arc:fx:${arcVersion}"
+    implementation "com.github.Anuken.Arc:arcnet:${arcVersion}"
+
+    // SDL3 backend — 完整 OpenGL 上下文（LWJGL 自带跨平台 natives）
+    implementation "com.github.Anuken.Arc:backend-sdl3:${arcVersion}"
+
+    // Rhino (JS engine for Mindustry JS mods)
+    implementation "com.github.Anuken:rhino:${rhinoVersion}"
+
+    // LZ4 compression
+    implementation "at.yawk.lz4:lz4-java:1.10.2"
+
+    // JLine for console input
+    implementation 'org.jline:jline:4.0.0'
+
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass = 'modvalidator.full.FullValidatorCli'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat = 'full'
+    }
+}
+
+tasks.withType(JavaCompile){
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['--release', '17']
+    options.forkOptions.jvmArgs += [
+        '--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED'
+    ]
+}
+
+// CLI task: gradle validateMod -PmodPath=/path/to/mod
+task validateMod(type: JavaExec){
+    group = 'mod-validator'
+    description = 'Validate a Mindustry mod with full client environment. Usage: gradle validateMod -PmodPath=/path/to/mod'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'modvalidator.full.FullValidatorCli'
+    if(project.hasProperty('modPath')){
+        args project.property('modPath')
+    }
+}
+
+// Fat jar for distribution (includes LWJGL natives for all platforms)
+task fatJar(type: Jar){
+    group = 'build'
+    description = 'Build a fat jar with all dependencies (cross-platform LWJGL natives included)'
+    archiveClassifier = 'all'
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude('META-INF/**')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes 'Main-Class': 'modvalidator.full.FullValidatorCli'
+    }
+    with jar
+}
