@@ -121,6 +121,7 @@ public class FullValidator {
 
         long deadline = System.currentTimeMillis() + 30000;
         int x = 2, y = 2;
+        int tested = 0, crashed = 0;
         for(Block block : blocks){
             if(System.currentTimeMillis() > deadline){
                 result.addIssue(ValidationResult.Severity.WARN, "block-test", "方块测试超时（30s），跳过剩余");
@@ -137,7 +138,9 @@ public class FullValidator {
                         world.tile(x, y).build.update();
                     }
                 }
+                tested++;
             }catch(Throwable t){
+                crashed++;
                 result.addIssue(ValidationResult.Severity.ERROR, "block-test",
                     "方块 '" + block.name + "' 更新时崩溃: " + t.getClass().getSimpleName() + ": " + t.getMessage());
             }
@@ -146,6 +149,8 @@ public class FullValidator {
             if(x >= size - 1){ x = 2; y++; }
             if(y >= size - 1) break;
         }
+        result.addIssue(ValidationResult.Severity.INFO, "block-test",
+            "方块测试完成: " + tested + " 通过, " + crashed + " 崩溃, 共 " + blocks.size + " 个");
     }
 
     @SuppressWarnings("unchecked")
@@ -167,6 +172,7 @@ public class FullValidator {
         }
 
         long deadline = System.currentTimeMillis() + 30000;
+        int tested = 0, crashed = 0;
         for(UnitType unit : units){
             if(System.currentTimeMillis() > deadline){
                 result.addIssue(ValidationResult.Severity.WARN, "unit-test", "单位测试超时（30s），跳过剩余");
@@ -183,11 +189,15 @@ public class FullValidator {
                     Time.update();
                     spawned.update();
                 }
+                tested++;
             }catch(Throwable t){
+                crashed++;
                 result.addIssue(ValidationResult.Severity.ERROR, "unit-test",
                     "单位 '" + unit.name + "' 崩溃: " + t.getClass().getSimpleName() + ": " + t.getMessage());
             }
         }
+        result.addIssue(ValidationResult.Severity.INFO, "unit-test",
+            "单位测试完成: " + tested + " 通过, " + crashed + " 崩溃, 共 " + units.size + " 个");
     }
 
     /**
