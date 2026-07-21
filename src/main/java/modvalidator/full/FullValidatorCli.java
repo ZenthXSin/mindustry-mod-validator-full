@@ -1,6 +1,8 @@
 package modvalidator.full;
 
+import arc.struct.*;
 import arc.util.*;
+import mindustry.ctype.*;
 import mindustry.mod.*;
 
 import java.util.*;
@@ -26,6 +28,7 @@ public class FullValidatorCli {
         String modPath = null;
         boolean jsonOutput = false;
         String outputFile = null;
+        String reportDir = null;
 
         for(int i = 0; i < args.length; i++){
             switch(args[i]){
@@ -35,6 +38,14 @@ public class FullValidatorCli {
                         outputFile = args[++i];
                     }else{
                         System.err.println("错误: --output 需要指定文件路径");
+                        System.exit(1);
+                    }
+                }
+                case "--report", "-r" -> {
+                    if(i + 1 < args.length){
+                        reportDir = args[++i];
+                    }else{
+                        System.err.println("错误: --report 需要指定目录路径");
                         System.exit(1);
                     }
                 }
@@ -85,6 +96,11 @@ public class FullValidatorCli {
             if(outputFile != null){
                 java.nio.file.Files.writeString(java.nio.file.Path.of(outputFile), report);
                 System.out.println("报告已写入: " + outputFile);
+            }
+
+            // Generate structured report directory
+            if(reportDir != null){
+                generateStructuredReport(result, env, reportDir);
             }
 
             System.exit(result.hasErrors() ? 1 : 0);
@@ -152,6 +168,147 @@ public class FullValidatorCli {
         return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
+    /**
+     * Generate a structured report directory with normalized files.
+     * <mod-name>/
+     *   summary.json          — 总览（模组名、版本、加载时间、错误统计）
+     *   issues.json           — 全部问题列表
+     *   issues-by-severity/   — 按严重级别分文件
+     *     error.json
+     *     warning.json
+     *     info.json
+     *   issues-by-category/   — 按类型分文件
+     *     content-parse.json
+     *     block-test.json
+     *     unit-test.json
+     *     shader.json
+     *     ...
+     *   content/              — 注册的模组内容清单
+     *     blocks.json
+     *     units.json
+     *     items.json
+     *     liquids.json
+     *     bullets.json
+     *   logs/                 — 原始日志
+     *     full.log
+     *     errors.log
+     *     warnings.log
+     */
+    private static void generateStructuredReport(FullValidator.ValidationResult result, FullTestEnvironment env, String reportDir){
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(reportDir);
+            java.nio.file.Files.createDirectories(dir);
+
+            // summary.json
+            StringBuilder summary = new StringBuilder();
+            summary.append("{\n");
+            summary.append("  \"modName\": \"").append(escapeJson(result.modName)).append("\",\n");
+            summary.append("  \"modPath\": \"").append(escapeJson(result.modPath)).append("\",\n");
+            summary.append("  \"loadTimeMs\": ").append(result.loadTimeMs).append(",\n");
+            summary.append("  \"testTimeMs\": ").append(result.testTimeMs).append(",\n");
+            summary.append("  \"status\": \"").append(result.hasErrors() ? "failed" : "passed").append("\",\n");
+            summary.append("  \"errors\": ").append(result.getErrorCount()).append(",\n");
+            summary.append("  \"warnings\": ").append(result.getWarnCount()).append(",\n");
+            summary.append("  \"info\": ").append(result.getInfoCount()).append("\n");
+            summary.append("}\n");
+            java.nio.file.Files.writeString(dir.resolve("summary.json"), summary.toString());
+
+            // issues.json — all issues
+            StringBuilder allIssues = new StringBuilder();
+            allIssues.append("[\n");
+            var issues = result.getIssues();
+            for(int i = 0; i < issues.size(); i++){
+                var issue = issues.get(i);
+                allIssues.append("  {\"severity\": \"").append(issue.severity())
+                    .append("\", \"category\": \"").append(escapeJson(issue.category()))
+                    .append("\", \"message\": \"").append(escapeJson(issue.message())).append("\"}");
+                if(i < issues.size() - 1) allIssues.append(",");
+                allIssues.append("\n");
+            }
+            allIssues.append("]\n");
+            java.nio.file.Files.writeString(dir.resolve("issues.json"), allIssues.toString());
+
+            // issues-by-severity/
+            java.nio.file.Path sevDir = dir.resolve("issues-by-severity");
+            java.nio.file.Files.createDirectories(sevDir);
+            for(var sev : FullValidator.ValidationResult.Severity.values()){
+                StringBuilder sb = new StringBuilder();
+                sb.append("[\n");
+                var list = issues.stream().filter(i -> i.severity() == sev).toList();
+                for(int i = 0; i < list.size(); i++){
+                    var issue = list.get(i);
+                    sb.append("  {\"category\": \"").append(escapeJson(issue.category()))
+                        .append("\", \"message\": \"").append(escapeJson(issue.message())).append("\"}");
+                    if(i < list.size() - 1) sb.append(",");
+                    sb.append("\n");
+                }
+                sb.append("]\n");
+                java.nio.file.Files.writeString(sevDir.resolve(sev.name().toLowerCase() + ".json"), sb.toString());
+            }
+
+            // issues-by-category/
+            java.nio.file.Path catDir = dir.resolve("issues-by-category");
+            java.nio.file.Files.createDirectories(catDir);
+            var categories = issues.stream().map(i -> i.category()).distinct().toList();
+            for(String cat : categories){
+                StringBuilder sb = new StringBuilder();
+                sb.append("[\n");
+                var list = issues.stream().filter(i -> i.category().equals(cat)).toList();
+                for(int i = 0; i < list.size(); i++){
+                    var issue = list.get(i);
+                    sb.append("  {\"severity\": \"").append(issue.severity())
+                        .append("\", \"message\": \"").append(escapeJson(issue.message())).append("\"}");
+                    if(i < list.size() - 1) sb.append(",");
+                    sb.append("\n");
+                }
+                sb.append("]\n");
+                String fileName = cat.replaceAll("[^a-zA-Z0-9_-]", "_") + ".json";
+                java.nio.file.Files.writeString(catDir.resolve(fileName), sb.toString());
+            }
+
+            // content/ — mod content inventory
+            java.nio.file.Path contentDir = dir.resolve("content");
+            java.nio.file.Files.createDirectories(contentDir);
+            writeContentList(contentDir, "blocks", env, mindustry.ctype.ContentType.block);
+            writeContentList(contentDir, "units", env, mindustry.ctype.ContentType.unit);
+            writeContentList(contentDir, "items", env, mindustry.ctype.ContentType.item);
+            writeContentList(contentDir, "liquids", env, mindustry.ctype.ContentType.liquid);
+            writeContentList(contentDir, "bullets", env, mindustry.ctype.ContentType.bullet);
+
+            // logs/
+            java.nio.file.Path logDir = dir.resolve("logs");
+            java.nio.file.Files.createDirectories(logDir);
+            java.nio.file.Files.writeString(logDir.resolve("full.log"), String.join("\n", env.getAllLogs()));
+            java.nio.file.Files.writeString(logDir.resolve("errors.log"), String.join("\n", env.getErrorLogs()));
+            java.nio.file.Files.writeString(logDir.resolve("warnings.log"), String.join("\n", env.getWarnLogs()));
+
+            System.out.println("结构化报告已生成: " + dir.toAbsolutePath());
+
+        } catch(Exception e){
+            System.err.println("生成结构化报告失败: " + e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void writeContentList(java.nio.file.Path dir, String name, FullTestEnvironment env, mindustry.ctype.ContentType type){
+        try {
+            arc.struct.Seq<? extends Content> contents = env.getContent(type);
+            StringBuilder sb = new StringBuilder();
+            sb.append("[\n");
+            for(int i = 0; i < contents.size; i++){
+                var c = contents.get(i);
+                String cName = (c instanceof mindustry.ctype.UnlockableContent uc) ? uc.name : c.toString();
+                sb.append("  {\"name\": \"").append(escapeJson(cName)).append("\", \"type\": \"").append(c.getClass().getSimpleName()).append("\"}");
+                if(i < contents.size - 1) sb.append(",");
+                sb.append("\n");
+            }
+            sb.append("]\n");
+            java.nio.file.Files.writeString(dir.resolve(name + ".json"), sb.toString());
+        } catch(Exception e){
+            // skip
+        }
+    }
+
     private static void printHelp(){
         System.out.println("Mindustry 模组验证器（完整环境）— 动态 JSON/JS 内容测试工具");
         System.out.println();
@@ -164,6 +321,7 @@ public class FullValidatorCli {
         System.out.println("选项:");
         System.out.println("  --json           以 JSON 格式输出报告");
         System.out.println("  --output, -o     将报告写入文件");
+        System.out.println("  --report, -r     生成结构化报告到指定目录");
         System.out.println("  --help, -h       显示此帮助信息");
         System.out.println();
         System.out.println("跨平台说明:");
