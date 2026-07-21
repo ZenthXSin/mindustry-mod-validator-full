@@ -42,6 +42,7 @@ public class LoadPipelineMonitor {
         // 第一遍：收集所有异常
         List<String[]> allAnomalies = new ArrayList<>();
         Map<String, Integer> nullFieldCount = new HashMap<>();
+        Map<String, Integer> negativeFieldCount = new HashMap<>();
 
         for (String type : ContentLifecycleHook.CONTENT_TYPES) {
             ContentType contentType = parseContentType(type);
@@ -57,21 +58,33 @@ public class LoadPipelineMonitor {
                 List<ContentLifecycleHook.Anomaly> anomalies =
                     lifecycleHook.detectAnomalies(c.getClass().getSimpleName(), contentName);
                 for (ContentLifecycleHook.Anomaly a : anomalies) {
-                    allAnomalies.add(new String[]{type, contentName, a.phase, a.field, a.message});
+                    allAnomalies.add(new String[]{type, contentName, a.phase, a.field, a.message, a.type});
                     // 统计 NULL_VALUE 类型的字段出现次数
                     if ("NULL_VALUE".equals(a.type)) {
                         nullFieldCount.merge(a.field, 1, Integer::sum);
+                    }
+                    // 统计 NEGATIVE_VALUE 类型的字段出现次数
+                    if ("NEGATIVE_VALUE".equals(a.type)) {
+                        negativeFieldCount.merge(a.field, 1, Integer::sum);
                     }
                 }
             }
         }
 
-        // 第二遍：输出，过滤高频 null 字段（>=4 个 Content 的同名字段为 null 则标记为误判）
+        // 第二遍：输出，过滤高频 null/负值 字段（>=4 个 Content 的同名字段触发则标记为误判）
         int filtered = 0;
         for (String[] a : allAnomalies) {
             boolean isFalsePositive = false;
-            if (a[4].contains("null")) {
+            // null 误报过滤
+            if ("NULL_VALUE".equals(a[5])) {
                 Integer count = nullFieldCount.get(a[3]);
+                if (count != null && count >= 4) {
+                    isFalsePositive = true;
+                }
+            }
+            // 负值误报过滤
+            if ("NEGATIVE_VALUE".equals(a[5])) {
+                Integer count = negativeFieldCount.get(a[3]);
                 if (count != null && count >= 4) {
                     isFalsePositive = true;
                 }
