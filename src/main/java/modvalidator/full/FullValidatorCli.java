@@ -189,6 +189,7 @@ public class FullValidatorCli {
      *     items.json
      *     liquids.json
      *     bullets.json
+     *   report.txt             — 完整文本报告
      *   logs/                 — 原始日志
      *     full.log
      *     errors.log
@@ -281,6 +282,9 @@ public class FullValidatorCli {
             java.nio.file.Files.writeString(logDir.resolve("full.log"), String.join("\n", env.getAllLogs()));
             java.nio.file.Files.writeString(logDir.resolve("errors.log"), String.join("\n", env.getErrorLogs()));
             java.nio.file.Files.writeString(logDir.resolve("warnings.log"), String.join("\n", env.getWarnLogs()));
+
+            // report.txt — 完整文本报告
+            java.nio.file.Files.writeString(dir.resolve("report.txt"), generateTextReport(result));
 
             System.out.println("结构化报告已生成: " + dir.toAbsolutePath());
 
