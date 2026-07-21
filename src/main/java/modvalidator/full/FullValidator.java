@@ -14,6 +14,9 @@ import mindustry.mod.Mods.*;
 import mindustry.type.*;
 import mindustry.world.*;
 
+import monitor.report.*;
+import monitor.stage.*;
+
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -31,11 +34,16 @@ public class FullValidator {
         this.result = result;
     }
 
+    private final MonitorReport deepReport = new MonitorReport();
+
     /**
      * Run all tests. Must be called from within the ClientLoadEvent callback
      * (i.e., after full client initialization).
+     * 五阶段管线：S2 加载监控 → S3 贴图验证 → S4 渲染分析 → S5 GL管线 → 动态测试
      */
     public void runAllTests(){
+        long testStart = System.currentTimeMillis();
+
         // Wait for content to be fully loaded
         if(!env.isClientLoaded()){
             result.addIssue(ValidationResult.Severity.ERROR, "full-env", "客户端未完全加载");
@@ -65,9 +73,33 @@ public class FullValidator {
             }
         }
 
+        // S2: 加载管线监控
+        new LoadPipelineMonitor(deepReport).run();
+
+        // S3: 贴图资源验证
+        new TextureResourceMonitor(deepReport).run();
+
+        // S4: 运行时渲染监控
+        new RenderPipelineMonitor(deepReport).run();
+
+        // S5: GL 渲染管线监控（full 版独有）
+        new GLRenderMonitor(deepReport).run();
+
+        // 将深度监控结果合并到主报告
+        mergeDeepReport();
+
         // Run dynamic tests
         testBlocks();
         testUnits();
+
+        result.testTimeMs = System.currentTimeMillis() - testStart;
+    }
+
+    private void mergeDeepReport(){
+        for(MonitorReport.Issue issue : deepReport.getIssues()){
+            result.addIssue(ValidationResult.Severity.valueOf(issue.severity.name()),
+                issue.category, issue.message);
+        }
     }
 
     @SuppressWarnings("unchecked")
