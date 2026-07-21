@@ -4,10 +4,14 @@ import arc.*;
 import arc.struct.*;
 import arc.util.*;
 import mindustry.*;
+import mindustry.core.*;
+import mindustry.core.GameState.*;
 import mindustry.ctype.*;
 import mindustry.game.*;
 import mindustry.gen.*;
 import mindustry.mod.*;
+import mindustry.mod.Mods.*;
+import mindustry.type.*;
 import mindustry.world.*;
 
 import java.util.*;

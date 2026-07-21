@@ -13,7 +13,10 @@ java {
 
 repositories {
     mavenCentral()
+    mavenLocal()
     maven { url 'https://jitpack.io' }
+    // LWJGL 3.4.2-SNAPSHOT snapshots (required by Arc SDL3 backend)
+    maven { url 'https://central.sonatype.com/repository/maven-snapshots' }
 }
 
 // Mindustry v159.5 (v159.6 JitPack build failed, keep v159.5 until fixed)
@@ -39,6 +42,12 @@ dependencies {
 
     // SDL3 backend — 完整 OpenGL 上下文（LWJGL 自带跨平台 natives）
     implementation "com.github.Anuken.Arc:backend-sdl3:${arcVersion}"
+
+    // Arc natives (预编译 libarc64.so / arc64.dll / libarc64.dylib + cursors)
+    implementation files("../arc-natives/build/libs/arc-natives-1.0.0.jar")
+
+    // Mindustry core assets (shaders, sprites, fonts, bundles, etc.)
+    implementation files("../mindustry-assets/build/libs/mindustry-assets-1.0.0.jar")
 
     // Rhino (JS engine for Mindustry JS mods)
     implementation "com.github.Anuken:rhino:${rhinoVersion}"

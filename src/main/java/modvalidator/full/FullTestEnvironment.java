@@ -4,6 +4,7 @@ import arc.*;
 import arc.backend.sdl.*;
 import arc.files.*;
 import arc.func.*;
+import arc.struct.*;
 import arc.util.*;
 import mindustry.*;
 import mindustry.core.*;
@@ -14,6 +15,7 @@ import mindustry.gen.*;
 import mindustry.mod.*;
 import mindustry.mod.Mods.*;
 
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
@@ -68,18 +70,37 @@ public class FullTestEnvironment {
             }
         };
 
-        // Import mod before launching (importMod needs settings directory)
-        Core.settings.setDataDirectory(new Fi(testDataDir));
+        // Set data directory via system property (read by ClientLauncher.setup())
+        System.setProperty("mindustry.data.dir", testDataDir);
+
         Fi modFile = new Fi(modPath);
         if(!modFile.exists()){
             throw new RuntimeException("模组未找到: " + modPath);
         }
+
+        // Prepare mods directory BEFORE SdlApplication starts
+        Fi dataFi = new Fi(testDataDir);
+        Fi modsDir = dataFi.child("mods");
+        modsDir.mkdirs();
+
+        // Copy mod to mods directory (ClientLauncher will auto-scan this dir)
+        Fi zipFile;
+        if(modFile.isDirectory()){
+            zipFile = new Fi(modFile.path() + ".zip");
+            zipDirectory(modFile, zipFile);
+        }else{
+            zipFile = modFile;
+        }
+        Fi dest = modsDir.child(zipFile.name());
+        zipFile.copyTo(dest);
 
         // Create a custom ClientLauncher that runs tests after full load
         ClientLauncher clientLauncher = new ClientLauncher(){
             @Override
             public void setup(){
                 super.setup();
+
+
 
                 // Register callback for when client is fully loaded
                 Events.on(ClientLoadEvent.class, e -> {
@@ -94,12 +115,11 @@ public class FullTestEnvironment {
                         }catch(Throwable t){
                             Log.err("[FullValidator] 测试回调崩溃: " + t.getMessage());
                             initError.compareAndSet(null, t);
-                        }finally{
-                            testDone.countDown();
                         }
-                    }else{
-                        testDone.countDown();
                     }
+                    // Signal test completion and exit the application
+                    testDone.countDown();
+                    Core.app.exit();
                 });
             }
         };
@@ -114,26 +134,19 @@ public class FullTestEnvironment {
         config.glVersions = new int[][]{{3, 0}, {2, 1}, {2, 0}};
         config.allowGl30 = true;
 
-        // Import mod into mods directory before SdlApplication starts
-        // We need to do this after settings are set but before ClientLauncher.setup() runs mods
-        // The trick: import mod file, then ClientLauncher.setup() will load it
-        Fi zipFile;
-        if(modFile.isDirectory()){
-            zipFile = new Fi(modFile.path() + ".zip");
-            zipDirectory(modFile, zipFile);
-        }else{
-            zipFile = modFile;
-        }
-
-        // Pre-import the mod so it's in the mods directory when ClientLauncher scans
-        Fi modDir = new Fi(testDataDir).child("mods/");
-        modDir.mkdirs();
-        Fi dest = modDir.child(zipFile.name());
-        zipFile.copyTo(dest);
+        // Load supplementary native library for NativeUtils (setEnv/unsetEnv/getEnv)
+        // BEFORE ArcNativesLoader.load() so the symbols are available when forceUtf8Locale() calls them
+        modvalidator.NativeUtilsPatch.ensureLoaded();
 
         // Launch SDL3 application (blocking until exit)
         // LWJGL automatically loads the correct native library for the current platform
-        new SdlApplication(clientLauncher, config);
+        try{
+            new SdlApplication(clientLauncher, config);
+        }catch(Throwable t){
+            Log.err("[FullValidator] SdlApplication 崩溃: " + t.getMessage());
+            initError.compareAndSet(null, t);
+            testDone.countDown();
+        }
 
         // Wait for test completion or timeout
         if(!testDone.await(120, TimeUnit.SECONDS)){
@@ -184,7 +197,9 @@ public class FullTestEnvironment {
     public List<String> getAllLogs(){ return allLogs; }
 
     public void exit(){
-        Core.app.exit();
+        if(Core.app != null){
+            Core.app.exit();
+        }
     }
 
     private void zipDirectory(Fi sourceDir, Fi destZip) throws Exception {
