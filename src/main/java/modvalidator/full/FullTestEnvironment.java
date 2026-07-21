@@ -147,7 +147,8 @@ public class FullTestEnvironment {
         try{
             new SdlApplication(clientLauncher, config);
         }catch(Throwable t){
-            Log.err("[FullValidator] SdlApplication 崩溃: " + t.getMessage());
+            Log.err("[FullValidator] SdlApplication 崩溃: " + t);
+            t.printStackTrace();
             initError.compareAndSet(null, t);
             testDone.countDown();
         }

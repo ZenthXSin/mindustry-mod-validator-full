@@ -54,6 +54,16 @@ public class FullValidator {
         Vars.state.set(GameState.State.playing);
         Vars.state.rules.infiniteResources = true;
 
+        // 初始化 MinimapRenderer pixmap，避免 Renderer.update() 时 NPE
+        try{
+            if(Vars.renderer.minimap.getPixmap() == null){
+                if(Vars.world.width() < 1) Vars.world.resize(1, 1);
+                Vars.renderer.minimap.reset();
+            }
+        }catch(Throwable t){
+            // minimap 初始化失败不影响验证
+        }
+
         // Collect mod info
         LoadedMod mod = env.getImportedMod();
         if(mod != null){
