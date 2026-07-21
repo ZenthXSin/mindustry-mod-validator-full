@@ -39,7 +39,7 @@ public class FullValidator {
     /**
      * Run all tests. Must be called from within the ClientLoadEvent callback
      * (i.e., after full client initialization).
-     * 五阶段管线：S2 加载监控 → S3 贴图验证 → S4 渲染分析 → S5 GL管线 → 动态测试
+     * 五阶段管线：S3 贴图验证 → S4 渲染分析 → S5 GL管线 → 动态测试 → S2 字段检测
      */
     public void runAllTests(){
         long testStart = System.currentTimeMillis();
@@ -73,9 +73,6 @@ public class FullValidator {
             }
         }
 
-        // S2: 加载管线监控
-        new LoadPipelineMonitor(deepReport).run();
-
         // S3: 贴图资源验证
         new TextureResourceMonitor(deepReport).run();
 
@@ -85,12 +82,15 @@ public class FullValidator {
         // S5: GL 渲染管线监控（full 版独有）
         new GLRenderMonitor(deepReport).run();
 
-        // 将深度监控结果合并到主报告
-        mergeDeepReport();
-
-        // Run dynamic tests
+        // 动态测试：创建世界、放置方块/单位、运行 60 tick
         testBlocks();
         testUnits();
+
+        // S2: 字段异常检测（在世界加载并运行后检测，此时字段已完全初始化）
+        new LoadPipelineMonitor(deepReport).run();
+
+        // 将深度监控结果合并到主报告
+        mergeDeepReport();
 
         result.testTimeMs = System.currentTimeMillis() - testStart;
     }
