@@ -39,6 +39,10 @@ public class LoadPipelineMonitor {
     }
 
     private void captureAllContent() {
+        // 第一遍：收集所有异常
+        List<String[]> allAnomalies = new ArrayList<>();
+        Map<String, Integer> nullFieldCount = new HashMap<>();
+
         for (String type : ContentLifecycleHook.CONTENT_TYPES) {
             ContentType contentType = parseContentType(type);
             if (contentType == null) continue;
@@ -53,14 +57,34 @@ public class LoadPipelineMonitor {
                 List<ContentLifecycleHook.Anomaly> anomalies =
                     lifecycleHook.detectAnomalies(c.getClass().getSimpleName(), contentName);
                 for (ContentLifecycleHook.Anomaly a : anomalies) {
-                    report.addIssue(MonitorReport.Severity.WARN, "content-anomaly",
-                        String.format("[%s/%s] %s: %s = %s",
-                            type, contentName, a.phase, a.field, a.message));
+                    allAnomalies.add(new String[]{type, contentName, a.phase, a.field, a.message});
+                    // 统计 NULL_VALUE 类型的字段出现次数
+                    if ("NULL_VALUE".equals(a.type)) {
+                        nullFieldCount.merge(a.field, 1, Integer::sum);
+                    }
                 }
             }
         }
 
-        System.out.println("[S2] 已抓取 " + lifecycleHook.getAllKeys().size() + " 个 Content 快照");
+        // 第二遍：输出，过滤高频 null 字段（>=4 个 Content 的同名字段为 null 则标记为误判）
+        int filtered = 0;
+        for (String[] a : allAnomalies) {
+            boolean isFalsePositive = false;
+            if (a[4].contains("null")) {
+                Integer count = nullFieldCount.get(a[3]);
+                if (count != null && count >= 4) {
+                    isFalsePositive = true;
+                }
+            }
+            if (!isFalsePositive) {
+                report.addIssue(MonitorReport.Severity.WARN, "content-anomaly",
+                    String.format("[%s/%s] %s: %s = %s", a[0], a[1], a[2], a[3], a[4]));
+            } else {
+                filtered++;
+            }
+        }
+
+        System.out.println("[S2] 已抓取 " + lifecycleHook.getAllKeys().size() + " 个 Content 快照, 过滤误判 " + filtered + " 条");
     }
 
     private void analyzeResults() {
