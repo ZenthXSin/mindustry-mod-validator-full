@@ -117,9 +117,13 @@ public class FullTestEnvironment {
                             initError.compareAndSet(null, t);
                         }
                     }
-                    // Signal test completion and exit the application
-                    testDone.countDown();
-                    Core.app.exit();
+
+                    // 延迟退出：让渲染线程画几帧，有 GPU 时能看到世界
+                    Log.info("[FullValidator] 等待渲染完成...");
+                    arc.util.Timer.schedule(() -> {
+                        testDone.countDown();
+                        Core.app.exit();
+                    }, 3);
                 });
             }
         };
