@@ -129,19 +129,19 @@ public class FullValidator {
         world.resize(size, size);
         world.tiles.fill();
 
-        long deadline = System.currentTimeMillis() + 30000;
+        long deadline = System.currentTimeMillis() + 120000;
         int x = 2, y = 2;
         int tested = 0, crashed = 0;
         for(Block block : blocks){
             if(System.currentTimeMillis() > deadline){
-                result.addIssue(ValidationResult.Severity.WARN, "block-test", "方块测试超时（30s），跳过剩余");
+                result.addIssue(ValidationResult.Severity.WARN, "block-test", "方块测试超时（120s），跳过剩余");
                 break;
             }
             try{
                 world.tile(x, y).setBlock(block, Team.get(0), 0);
 
-                // 60 tick with time advancement
-                for(int i = 0; i < 60; i++){
+                // 600 tick with time advancement
+                for(int i = 0; i < 600; i++){
                     if(world.tile(x, y).build != null){
                         Time.delta = 1f;
                         Time.update();
@@ -160,7 +160,7 @@ public class FullValidator {
             if(y >= size - 1) break;
         }
         result.addIssue(ValidationResult.Severity.INFO, "block-test",
-            "方块测试完成: " + tested + " 通过, " + crashed + " 崩溃, 共 " + blocks.size + " 个");
+            "方块测试完成: " + tested + " 通过, " + crashed + " 崩溃, 共 " + blocks.size + " 个 (600 tick)");
     }
 
     @SuppressWarnings("unchecked")
@@ -181,11 +181,11 @@ public class FullValidator {
             world.tiles.fill();
         }
 
-        long deadline = System.currentTimeMillis() + 30000;
+        long deadline = System.currentTimeMillis() + 120000;
         int tested = 0, crashed = 0;
         for(UnitType unit : units){
             if(System.currentTimeMillis() > deadline){
-                result.addIssue(ValidationResult.Severity.WARN, "unit-test", "单位测试超时（30s），跳过剩余");
+                result.addIssue(ValidationResult.Severity.WARN, "unit-test", "单位测试超时（120s），跳过剩余");
                 break;
             }
             try{
@@ -193,12 +193,21 @@ public class FullValidator {
                 spawned.set(32f, 32f);
                 spawned.add();
 
-                // 60 tick with time advancement for AI movement
-                for(int i = 0; i < 60; i++){
+                // 在单位附近放一个敌方单位作为靶子，让AI能开火
+                mindustry.gen.Unit target = mindustry.content.UnitTypes.dagger.create(Team.get(1));
+                target.set(64f, 32f);
+                target.add();
+
+                // 600 tick with time advancement
+                for(int i = 0; i < 600; i++){
                     Time.delta = 1f;
                     Time.update();
                     spawned.update();
+                    target.update();
                 }
+                // 清理
+                spawned.remove();
+                target.remove();
                 tested++;
             }catch(Throwable t){
                 crashed++;
@@ -207,7 +216,7 @@ public class FullValidator {
             }
         }
         result.addIssue(ValidationResult.Severity.INFO, "unit-test",
-            "单位测试完成: " + tested + " 通过, " + crashed + " 崩溃, 共 " + units.size + " 个");
+            "单位测试完成: " + tested + " 通过, " + crashed + " 崩溃, 共 " + units.size + " 个 (600 tick + 开火)");
     }
 
     /**
